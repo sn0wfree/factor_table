@@ -3,6 +3,11 @@ from collections import deque
 import pandas as pd
 import numpy as np
 from factor_table.core.Factors import __Factor__, FactorUnit, FactorInfo
+from factor_table.utils.process_bar import process_bar
+
+COLS = list(FactorInfo._fields[:3]) + list(FactorInfo._fields[-2:])
+FACTOR_NAME_COLS = FactorInfo._fields[3]
+ALIAS_COLS = FactorInfo._fields[4]
 
 
 class FactorPool(deque):
@@ -13,58 +18,42 @@ class FactorPool(deque):
 
     def add_factor(self, *args, **kwargs):
         factor = args[0]
+        # todo check factor type
         if isinstance(factor, __Factor__):
             self.append(factor)
         else:
             factor = FactorUnit(*args, **kwargs)
             self.append(factor)
 
-    # def reduce_sql_type(self):
-    #     cols = list(FactorInfo._fields[:3]) + list(FactorInfo._fields[-2:])
-    #     factor_name_col = FactorInfo._fields[3]
-    #     alias_col = FactorInfo._fields[4]
-    #     sql_f = list(filter(lambda x: (x.via.startswith('SQL_')) or (x.via == 'db_table'), self))
-    #     f = pd.DataFrame(sql_f, columns=FactorInfo._fields)
-    #     for (db_table, dts, iid, via, conditions), df in f.groupby(cols):
-    #         # masks = (f['db_table'] == db_table) & (f['dts'] == dts) & (f['iid'] == iid) & (
-    #         #         f['conditions'] == conditions)
-    #         cc = df[[factor_name_col, alias_col]].apply(lambda x: ','.join(x))
-    #         origin_factor_names = cc[factor_name_col].split(',')
-    #         alias = cc[alias_col].split(',')
-    #         # use set will disrupt the order
-    #         # we need keep the origin order
-    #         back = list(zip(origin_factor_names, alias))
-    #         disrupted = list(set(back))
-    #         disrupted.sort(key=back.index)
-    #
-    #         origin_factor_names_new, alias_new = zip(*disrupted)
-    #         alias_new = list(map(lambda x: x if x != 'None' else None, alias_new))
-    #         yield (db_table, dts, iid, origin_factor_names_new, alias_new, via, conditions)
-
-    def merge_df_factor(self):
-        for df in list(filter(lambda x: x._obj_type == 'DF', self)):
+    @staticmethod
+    def merge_df_factor(factor_pool):
+        if not hasattr(factor_pool, '__iter__'):
+            raise TypeError('factor_pool must be iterable!')
+        for df in filter(lambda x: x._obj_type == 'DF', factor_pool):
             yield df
-
-    def merge_h5_factor(self):
-        for h5 in list(filter(lambda x: x._obj_type == 'H5', self)):
+    @staticmethod
+    def merge_h5_factor(factor_pool):
+        if not hasattr(factor_pool, '__iter__'):
+            raise TypeError('factor_pool must be iterable!')
+        for h5 in filter(lambda x: x._obj_type == 'H5', factor_pool):
             yield h5
+    @staticmethod
+    def merge_sql_factor(factor_pool):
+        if not hasattr(factor_pool, '__iter__'):
+            raise TypeError('factor_pool must be iterable!')
+        
 
-    def merge_sql_factor(self):
-        cols = list(FactorInfo._fields[:3]) + list(FactorInfo._fields[-2:])
-        factor_name_col = FactorInfo._fields[3]
-        alias_col = FactorInfo._fields[4]
-
-        factors = list(filter(lambda x: x._obj_type.startswith(('SQL_', 'db_table')), self))
+        factors = list(filter(lambda x: x._obj_type.startswith(('SQL_', 'db_table')), factor_pool))
 
         factors_info = pd.DataFrame(list(map(lambda x: x.factor_info(), factors)))
-        print(factors_info, factors_info.index)
+        # print(factors_info, factors_info.index)
 
         # factors.extend(sql_f)  # dataframe have not reduced!
-        for (db_table, dts, iid, via, info), df in factors_info.groupby(cols):
+        for (db_table, dts, iid, via, info), df in factors_info.groupby(COLS): # merge same source factors
             # merge same source data
-            cc = df[[factor_name_col, alias_col]].apply(lambda x: ','.join(x))
-            origin_factor_names = cc[factor_name_col].split(',')
-            alias = cc[alias_col].split(',')
+            factor_name_and_alias = df[[FACTOR_NAME_COLS, ALIAS_COLS]].apply(lambda x: ','.join(x))
+            origin_factor_names = factor_name_and_alias[FACTOR_NAME_COLS].split(',')
+            alias = factor_name_and_alias[ALIAS_COLS].split(',')
             # use set will disrupt the order
             # we need keep the origin order
             back = list(zip(origin_factor_names, alias))
@@ -114,12 +103,11 @@ class FactorPool(deque):
                 if self._cik_iids is None:
                     raise KeyError('cik_iids(either default approach or fetch) both are not setup!')
 
-        if reduced:
-            factors = self.merge_factors()
-        else:
-            factors = self
+        
+        factors = self.merge_factors() if reduced else self
+        
 
-        fetched = [f.get(self._cik_dts, self._cik_iids).set_index(['cik_dts', 'cik_iid']) for f in factors]
+        fetched = [f.get(self._cik_dts, self._cik_iids).set_index(['cik_dts', 'cik_iid']) for f in process_bar(factors)]
 
         result = pd.concat(fetched, axis=1)
         # columns = result.columns.tolist()

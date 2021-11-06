@@ -1,10 +1,12 @@
 # coding=utf-8
+import os
+import warnings
 from collections import namedtuple, Callable
-from functools import partial
-from factor_table.utils.check_file_type import filetype
+from typing import Union
+
 import pandas as pd
-import os, warnings
-import numpy as np
+
+from factor_table.utils.check_file_type import filetype
 
 CIK = namedtuple('CoreIndexKeys', ('dts', 'iid'))
 
@@ -13,8 +15,8 @@ FactorInfo = namedtuple('FactorInfo',
 
 
 class __Factor__(object):
-    def __init__(self, name, obj, cik_dt: str, cik_id: str, factor_names: (list, tuple, str), *args,
-                 as_alias: (list, tuple, str) = None, db_table: str = None, **kwargs):
+    def __init__(self, name, obj, cik_dt: str, cik_id: str, factor_names: Union[list, tuple, str], *args,
+                 as_alias: Union[list, tuple, str] = None, db_table: str = None, **kwargs):
         self._obj = obj
         self._cik = CIK(cik_dt, cik_id)
         self._factor_name_list = self.generate_factor_names(factor_names)
@@ -26,7 +28,7 @@ class __Factor__(object):
     __slots__ = ['_obj', '_cik', '_factor_name_list', '_alias', '_obj_type', '_db_table', '_name']
 
     @staticmethod
-    def generate_factor_names(factor_names: (list, tuple, str)):
+    def generate_factor_names(factor_names: Union[list, tuple, str]):
         if isinstance(factor_names, str):
             if ',' in factor_names:
                 factor_names = factor_names.split(',')
@@ -39,7 +41,7 @@ class __Factor__(object):
         return factor_names
 
     @staticmethod
-    def generate_alias(factor_names: (list,), as_alias: (list, tuple, str) = None):
+    def generate_alias(factor_names: Union[list,], as_alias: Union[list, tuple, str] = None):
         if as_alias is None:
             alias = len(factor_names) * [None]
         elif isinstance(as_alias, str):
@@ -85,7 +87,7 @@ class __FactorDF__(__Factor__):  # only store a cross section data
     __slots__ = ['_obj', '_cik', '_factor_name_list', '_alias', '_obj_type', '_db_table', '_name']
 
     def __init__(self, name: str, df: pd.DataFrame, cik_dt: str, cik_id: str, factor_names: str, *args,
-                 as_alias: (list, tuple, str) = None, **kwargs):
+                 as_alias: Union[list, tuple, str] = None, **kwargs):
         super(__FactorDF__, self).__init__(name, df, cik_dt, cik_id, factor_names, *args,
                                            as_alias=as_alias, **kwargs)
         self._obj_type = 'DF'
@@ -99,7 +101,7 @@ class __FactorH5__(__Factor__):  # only store a cross section data
     __slots__ = ['_obj', '_cik', '_factor_name_list', '_alias', '_obj_type', '_db_table', '_name']
 
     def __init__(self, key: str, h5_path: str, cik_dt: str, cik_id: str, factor_names: list, *args,
-                 as_alias: (list, tuple, str) = None, **kwargs):
+                 as_alias: Union[list, tuple, str] = None, **kwargs):
         super(__FactorH5__, self).__init__(key, h5_path, cik_dt, cik_id, factor_names, *args,
                                            as_alias=as_alias, **kwargs)
         if filetype(h5_path) == 'HDF5':
@@ -127,7 +129,7 @@ class __FactorH5__(__Factor__):  # only store a cross section data
 
 class __FactorSQL__(__Factor__):  # only store a cross section data
     def __init__(self, db_table_sql: str, query: object, cik_dt: str, cik_id: str, factor_names: str, *args,
-                 as_alias: (list, tuple, str) = None, **kwargs):
+                 as_alias: Union[list, tuple, str] = None, **kwargs):
         super(__FactorSQL__, self).__init__(db_table_sql, query, cik_dt, cik_id, factor_names, *args,
                                             as_alias=as_alias, **kwargs)
         db_type = kwargs.get('db_type', 'ClickHouse')  # 默认是ClickHouse
@@ -185,20 +187,19 @@ class __FactorSQL__(__Factor__):  # only store a cross section data
 
 
 class FactorUnit(type):
-    def __new__(cls, name, obj, cik_dt: str, cik_id: str, factor_names: (list, tuple, str), *args,
-                as_alias: (list, tuple, str) = None, db_table: str = None, **kwargs):
+    def __new__(cls, name, obj, factor_names: Union[list, tuple, str], cik_dt: str = 'cik_dt', cik_iid: str = 'cik_iid',
+                as_alias: Union[list, tuple, str] = None, db_table: str = None, **kwargs):
         if isinstance(obj, pd.DataFrame):
-            _obj = __FactorDF__(name, obj, cik_dt, cik_id, factor_names, *args,
-                                as_alias, db_table, **kwargs)
+            _obj = __FactorDF__(name, obj, cik_dt, cik_iid, factor_names, as_alias, db_table, **kwargs)
         elif isinstance(obj, str) and os.path.isfile(obj) and obj.lower().endswith(
                 '.h5'):  # obj is path and end with .h5
-            _obj = __FactorH5__(name, obj, cik_dt, cik_id, factor_names, *args,
+            _obj = __FactorH5__(name, obj, cik_dt, cik_iid, factor_names,
                                 as_alias, db_table, **kwargs)
         elif isinstance(obj, Callable):  # obj is executable query function
-            _obj = __FactorSQL__(name, obj, cik_dt, cik_id, factor_names, *args,
+            _obj = __FactorSQL__(name, obj, cik_dt, cik_iid, factor_names,
                                  as_alias, db_table, **kwargs)
         else:
-            raise ValueError('unknow info')
+            raise ValueError('unknown info')
         _obj.__class__.__name__ = 'FactorUnit'
         return _obj
 
@@ -207,7 +208,7 @@ if __name__ == '__main__':
     import numpy as np
 
     df = pd.DataFrame(np.random.random(size=(1000, 4)), columns=['cik_dts', 'cik_iid', 'v1', 'v2'])
-    f1 = FactorUnit('test', df, 'cik_dts', 'cik_iid', factor_names=['v1', 'v2'])
+    f1 = FactorUnit('test', df, factor_names=['v1', 'v2'], cik_dt='cik_dts', cik_iid='cik_iid', )
     print(type(FactorUnit))
     print(isinstance(f1, FactorUnit))
 
