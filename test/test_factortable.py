@@ -128,14 +128,26 @@ class MyTestCase(unittest.TestCase):
         cik_dt_list = df['cik_dts'].dt.strftime("%Y-%m-%d")
         cik_id_list = list(set(df['cik_ids'].unique().tolist() + df2['cik_ids'].unique().tolist()))
         if not exists:
-            ft.save(store_path, _cik_dts=cik_dt_list, _cik_ids=cik_id_list)
+            ft.save(store_path, force=False, _cik_dts=cik_dt_list, _cik_ids=cik_id_list)
             self.assertEqual(True, os.path.exists(store_path))
         else:
-            with self.assertWarns(UserWarning):
-                ft.save(store_path, _cik_dts=cik_dt_list, _cik_ids=cik_id_list)
 
-        # result = ft.fetch(cik_dt_list, cik_id_list, show_process=False, reduced=False)
-        # self.assertListEqual(result.columns.tolist(), ['renamed_v1', 'renamed_v2', 'v1', 'renamed_v4'])
+            ft.save(store_path, _cik_dts=cik_dt_list, _cik_ids=cik_id_list)
+
+    def test_save_update(self):
+        store_path = 'test_save3.h5'
+        exists = os.path.exists(store_path)
+        df = pd.DataFrame(np.random.random(size=(100, 2)), columns=['v1', 'v2'])
+        df['cik_dts'] = pd.date_range(start='2020-01-01', periods=100, freq='D')
+        df['cik_ids'] = np.random.randint(0, 100000, 100)
+
+        ft = FactorTable()
+        ft.add_factor('test', df, cik_dt='cik_dts', cik_id='cik_ids', factor_names=['v1', 'v2'],
+                      as_alias=['renamed_v1', 'renamed_v2'])
+        cik_dt_list = df['cik_dts'].dt.strftime("%Y-%m-%d")
+        cik_id_list = list(set(df['cik_ids'].unique().tolist()))
+
+        ft.save(store_path, _cik_dts=cik_dt_list, _cik_ids=cik_id_list)
 
     def test_load_no_exists_err(self):
         store_path = 'test_save2.h5'
@@ -162,7 +174,7 @@ class MyTestCase(unittest.TestCase):
 
         ft = FactorTable()
         ft.add_factor(f1)
-        ft.add_factor(f2)
+        # ft.add_factor(f2)
 
         # cik_dt_list = df['cik_dts'].dt.strftime("%Y-%m-%d")
         # cik_id_list = list(set(df['cik_ids'].unique().tolist() + df2['cik_ids'].unique().tolist()))
