@@ -1,0 +1,10 @@
+{
+  "ExpandedNodes": [
+    "",
+    "\\factor_table",
+    "\\factor_table\\core",
+    "\\factor_table\\factor_engine"
+  ],
+  "SelectedNode": "\\factor_table\\core\\factortable.py",
+  "PreviewInSolutionExplorer": false
+}

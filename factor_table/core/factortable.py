@@ -1,12 +1,11 @@
 # coding=utf-8
-
-
 from functools import wraps
 from typing import Union
 
 import pandas as pd
 
 from factor_table.core.FactorPool import FactorPool
+from factor_table.core.Factors import FactorCreator
 
 
 class __MetaFactorTable__(object):
@@ -73,8 +72,8 @@ class __MetaFactorTable__(object):
         """
 
 
-        :param cik_iid:
-        :param default_cik_iid:
+        :param cik_id:
+        :param default_cik_id:
         :return:
 
         """
@@ -103,64 +102,72 @@ class __MetaFactorTable__(object):
 
 
 class __FactorTable__(__MetaFactorTable__):
-    def __init__(self, **kwargs):
-        self._checked = False
-        # False if 'strict_cik' not in kwargs.keys() else kwargs['strict_cik']
-        # self._strict_cik = self._extract_kwargs_info('strict_cik', False, kwargs, use_default=True)
-        # self._store_path = self._extract_kwargs_info('store_path', None, kwargs, use_default=True)
-        # auto_load = self._extract_kwargs_info('auto_load', False, kwargs, use_default=True)
+    __slots__ = ['__factors', '_cleaned', '_transformed', '__transformed_data', '_status']
 
-        # 'cik_dt' if 'cik_dt' not in kwargs.keys() else kwargs['cik_dt']  # default use cik_dt as cik_dt
-        # cik_dt, cik_id = self._extract_kwargs_info('cik_dt', 'cik_dt', kwargs,
-        #                                            use_default=True), self._extract_kwargs_info('cik_id',
-        #                                                                                         'cik_id',
-        #                                                                                         kwargs,
-        #                                                                                         use_default=True)
-        # self._cik_cols = CIK(cik_dt, cik_id)
-
-        # self._cik_dts = None
-        # self._cik_ids = None
-        # self._checked = True
-        # self.__auto_check_cik__()  # check default dt and iid whether set up
-        self._factors = FactorPool()
-        # if auto_load:
-        #     self.load(self._store_path)
+    def __init__(self, **config):
+        self._cleaned = False
+        self._transformed = False
+        self.__transformed_data = {}  # store transformed data
+        self.__factors = FactorPool()
+        self._status = config  # store config
 
     @wraps(FactorPool.show_factors)
     def show_factors(self, *args, **kwargs):
-        return self._factors.show_factors(*args, **kwargs)
+        return self.__factors.show_factors(*args, **kwargs)
 
     @wraps(FactorPool.show_factors)
     def append(self, *args, **kwargs):
-        self._factors.append(*args, **kwargs)
+        self.__factors.append(*args, **kwargs)
 
     @wraps(FactorPool.add_factor)
     def add_factor(self, *args, **kwargs):
-        return self._factors.add_factor(*args, **kwargs)
+        return self.__factors.add_factor(*args, **kwargs)
+
+    def add_elements(self, *elements):
+        for element in elements:
+            self.__factors.add_factor(FactorCreator.load_from_element(element))
+
+    def add_factor_from_config(self, *configs):
+        for config in configs:
+            self.__factors.add_factor(**config)
 
     @wraps(FactorPool.save)
-    def save(self, *args, **kwargs):
-        return self._factors.save(*args, **kwargs)
+    def save(self, *args, force=True, **kwargs):
+        # force = self._status.get('force', False)
+        return self.__factors.save(self.__factors, *args, force=force, **kwargs)
 
     @wraps(FactorPool.load)
     def load(self, *args, **kwargs):
-        return self._factors.load(*args, **kwargs)
+        return self.__factors.load(self, *args, **kwargs)
+
+    @property
+    def _obj_type(self):
+        h = [f._obj_type for f in self.__factors]
+        return h
+
+    @property
+    def _enable_update(self):
+        if self._status.get('strict_update', True):
+            sql_count = list(filter(lambda x: not x.startswith(('SQL_', 'db_table_')), self._obj_type))
+        else:
+            sql_count = self._obj_type
+        return len(sql_count) == 0
 
     @property
     def cik_dts(self):
         h = []
-        for f in self._factors:
+        for f in self.__factors:
             h.extend(f.get_cik_dts())
         return sorted(set(h))
 
     @property
     def cik_ids(self):
         h = []
-        for f in self._factors:
+        for f in self.__factors:
             h.extend(f.get_cik_ids())
         return sorted(set(h))
 
-    def fetch(self, _cik_dts, _cik_ids, reduced=True, add_limit=False, show_process=True, delay=False):
+    def fetch(self, _cik_dts, _cik_ids, reduced=False, add_limit=False, show_process=True, delay=False):
         """
 
         :param delay:
@@ -171,23 +178,9 @@ class __FactorTable__(__MetaFactorTable__):
         :param add_limit: use force limit columns
         :return:
         """
-        # if not add_limit:
-        #     if _cik_dts is not None:
-        #         self._cik_dts = _cik_dts
-        #     else:
-        #         if self._cik_dts is None:
-        #             raise KeyError(
-        #                 'cik_dts(either default approach or fetch) both are not setup!')
-        #
-        #     if _cik_ids is not None:
-        #         self._cik_ids = _cik_ids
-        #     else:
-        #         if self._cik_ids is None:
-        #             raise KeyError(
-        #                 'cik_ids(either default approach or fetch) both are not setup!')
-        # query_func = self._node
-        fetched = self._factors.fetch_iter(_cik_dts=_cik_dts, _cik_ids=_cik_ids, reduced=reduced,
-                                           add_limit=add_limit, show_process=show_process)
+
+        fetched = self.__factors.fetch_iter(_cik_dts=_cik_dts, _cik_ids=_cik_ids, reduced=reduced,
+                                            add_limit=add_limit, show_process=show_process)
         if delay:
             return fetched
         else:
@@ -196,144 +189,42 @@ class __FactorTable__(__MetaFactorTable__):
             return result
 
 
-# class __FactorTableOld__(__MetaFactorTable__):
-#     __Name__ = "基础因子库单因子表"
-
-#     def __init__(self, *args, **kwargs):
-#         # super(FatctorTable, self).__init__(*args, **kwargs)
-#         # TODO _node 改成适配器模式，而不是写死的
-#         self._node = BaseSingleQueryBaseNode(*args, **kwargs)
-
-#         cik_dt = 'cik_dt' if 'cik_dt' not in kwargs.keys(
-#         ) else kwargs['cik_dt']  # default use cik_dt as cik_dt
-#         cik_iid = 'cik_iid' if 'cik_iid' not in kwargs.keys(
-#         ) else kwargs['cik_iid']  # default use cik_iid as cik_iid
-#         self._cik = CIK(cik_dt, cik_iid)
-#         self._cik_data = None
-#         self._checked = False
-#         self.__auto_check_cik__()  # check default dt and iid whether set up
-#         self._factors = _FactorPool()
-
-#         self._strict_cik = False if 'strict_cik' not in kwargs.keys(
-#         ) else kwargs['strict_cik']
-#         # self.append = self.add_factor
-
-#         self._cik_dts = None
-#         self._cik_iids = None
-
-#     def __auto_check_cik__(self):
-#         if not self._checked and (self._cik.dts is None or self._cik.iid is None):
-#             raise NotImplementedError('cik(dts or iid) is not setup!')
-#         else:
-#             self._checked = True
-
-#     def _setup_cik(self, cik_dt_col: str, cik_iid_col: str):
-#         """
-#         设置 cik 列名
-#         :param cik_dt_col:
-#         :param cik_iid_col:
-#         :return:
-#         """
-
-#         self._cik = CIK(cik_dt_col, cik_iid_col)
-
-#     # def getDB(self, db):
-#     #     self.db = db
-
-#     def add_factor(self, db_table: str, factor_names: Union(list, tuple, str), cik_dt=None, cik_iid=None,
-#                    cik_dt_format='datetime',
-
-#                    as_alias: Union(list, tuple, str) = None):
-#         conds = '1'  # not allow to set conds
-#         cik_dt, cik_iid = self.check_cik_dt(cik_dt=cik_dt, default_cik_dt=self._cik.dts), self.check_cik_iid(
-#             cik_iid=cik_iid, default_cik_iid=self._cik.iid)
-
-#         res = self._factors.add_factor(db_table, factor_names, cik_dt=cik_dt, cik_iid=cik_iid,
-#                                        cik_dt_format=cik_dt_format,
-#                                        conds=conds, as_alias=as_alias)
-#         if isinstance(res, tuple):
-#             self._factors.append(res)
-#         elif isinstance(res, list):
-#             self._factors.extend(res)
-#         else:
-#             raise ValueError('res is not list or tuple')
-
-#     def show_factors(self, reduced=False, to_df=True):
-#         return self._factors.show_factors(reduced=reduced, to_df=to_df)
-
-#     def __iter__(self):
-#         query_func = self._node
-#         return self._factors.fetch_iter(query_func, self.cik_dt, self.cik_iid, reduced=True,
-#                                         add_limit=False)
-
-#     def head(self, reduced=True, ):
-#         """
-#         quick look top data
-#         :param reduced:
-#         :return:
-#         """
-
-#         return self.fetch(reduced=reduced, add_limit=True)
-
-#     def fetch(self, _cik_dts=None, _cik_iids=None, reduced=True, add_limit=False, ):
-#         """
-
-#         :param reduced: whether use reduce form
-#         :param _cik_dts: set up dts
-#         :param _cik_iids:  set up iids
-#         :param add_limit: use force limit columns
-#         :return:
-#         """
-#         if not add_limit:
-#             if _cik_dts is not None:
-#                 self._cik_dts = _cik_dts
-#             else:
-#                 if self._cik_dts is None:
-#                     raise KeyError(
-#                         'cik_dts(either default approach or fetch) both are not setup!')
-
-#             if _cik_iids is not None:
-#                 self._cik_iids = _cik_iids
-#             else:
-#                 if self._cik_iids is None:
-#                     raise KeyError(
-#                         'cik_iids(either default approach or fetch) both are not setup!')
-#         query_func = self._node
-#         fetched = self._factors.fetch_iter(query_func, self.cik_dt, self.cik_iid, reduced=reduced,
-#                                            add_limit=add_limit)
-
-#         result = pd.concat(fetched, axis=1)
-#         # columns = result.columns.tolist()
-
-#         return result
-
-#     @property
-#     def cik_dt(self):
-#         dt_format = "%Y%m%d"
-#         if self._cik_dts is None:
-#             return "  1 "
-#         else:
-#             cik_dts_str = "','".join(map(lambda x: x.strftime(
-#                 dt_format), pd.to_datetime(self._cik_dts)))
-#             return f" toYYYYMMDD(cik_dt) in ('{cik_dts_str}') "
-
-#     def set_cik_dt(self, cik_dt: list):
-#         self._cik_dts = cik_dt
-
-#     @property
-#     def cik_iid(self):
-#         if self._cik_iids is None:
-#             return "  1 "
-#         else:
-#             cik_iid_str = "','".join(map(lambda x: x, self._cik_iids))
-#             return f" cik_iid in ('{cik_iid_str}') "
-
-#     def set_cik_iid(self, cik_iid: list):
-#         self._cik_iids = cik_iid
-#         pass
-
 class FactorTable(__FactorTable__):
-    pass
+    __slots__ = ['__factors', '_cleaned', '_transformed', '__transformed_data']
+
+    def transform_matrix(self, to='matrix', **kwargs):
+        """
+        
+        transform to matrix form
+        """
+        cik_dts = self.cik_dts
+        cik_ids = self.cik_ids
+        data = self.fetch(cik_dts, cik_ids, reduced=True, add_limit=False)
+        cols = data.columns.tolist()
+        holder = {col: data[col].reset_index().pivot_table(index='cik_dt', columns='cik_id', values=col) for col in
+                  cols}
+
+        self.__transformed_data = holder
+        self._transformed = True
+
+    def clean(self):
+        """
+        clean redundant factors
+        """
+        if self._transformed:
+            self.__factors = FactorPool()
+            self._cleaned = True
+        else:
+            raise ValueError('You should transform first!')
+
+    def __getitem__(self, item):
+        """
+        get matrix form item from factor table
+        """
+        if self._transformed:
+            return self.__transformed_data[item]
+        else:
+            raise ValueError('transform first!')
 
 
 if __name__ == '__main__':

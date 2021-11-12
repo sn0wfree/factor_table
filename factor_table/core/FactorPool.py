@@ -1,11 +1,11 @@
 # coding=utf-8
 from collections import deque
-import os,warnings
+
 import pandas as pd
 
 from factor_table.core.FactorTools import SaveTools
 from factor_table.core.Factors import Factor as __Factor__, FactorCreator
-from factor_table.helper import FactorInfo
+from factor_table.helper import FactorInfo, FactorElement
 from factor_table.utils.process_bar import process_bar
 
 # db_table, dts, iid, via, info
@@ -14,16 +14,34 @@ FACTOR_NAME_COLS = 'origin_factor_names'
 ALIAS_COLS = 'alias'
 
 
-class FactorPool(deque):
+class FactorPool(deque, SaveTools):
     def __init__(self, ):
         super(FactorPool, self).__init__()
         self._cik_ids = None
         self._cik_dts = None
 
+    """
+    @dataclass
+class FactorElement(object):
+    name: (str, object)
+    obj: (object,)
+    cik_dt: str
+    cik_id: str
+    factor_names: (list, tuple, str)
+    as_alias: (list, tuple, str)
+    db_table: str
+    kwargs: dict
+    """
+
     def add_factor(self, *args, **kwargs):
-        factor = args[0]
+        factor_ori = args[0]
         # todo check factor type
-        if isinstance(factor, __Factor__):
+        if isinstance(factor_ori, __Factor__):
+            self.append(factor_ori)
+        elif isinstance(factor_ori, FactorElement):
+            factor = FactorCreator.load_from_element(factor_ori)
+            # name, obj, cik_dt: str, cik_id: str, factor_names: (list, tuple, str),
+            #                 as_alias: (list, tuple, str) = None, db_table: str = None, **kwargs
             self.append(factor)
         else:
             factor = FactorCreator(*args, **kwargs)
@@ -51,9 +69,6 @@ class FactorPool(deque):
         factors = list(filter(lambda x: x._obj_type.startswith(('SQL_', 'db_table')), factor_pool))
 
         factors_info = pd.DataFrame(list(map(lambda x: x.factor_info(), factors)), columns=FactorInfo.__slots__)
-        # print(factors_info, factors_info.index)
-
-        # factors.extend(sql_f)  # dataframe have not reduced!
         for (db_table, dts, iid, via, info), df in factors_info.groupby(COLS):  # merge same source factors
             # merge same source data
             factor_name_and_alias = df[[FACTOR_NAME_COLS, ALIAS_COLS]].apply(lambda x: ','.join(x))
@@ -74,8 +89,7 @@ class FactorPool(deque):
             # name, obj, cik_dt: str, cik_id: str, factor_names: (list, tuple, str), *args,
             # as_alias: (list, tuple, str) = None, db_table: str = None, ** kwargs
             res = FactorCreator(db_table, factors[df.index[0]]._obj, dts, iid, origin_factor_names_new, via,
-                                as_alias=alias_new,
-                                db_table=db_table)
+                                as_alias=alias_new, db_table=db_table)
             yield res
 
     def show_factors(self, reduced=False, to_df=True):
@@ -86,22 +100,26 @@ class FactorPool(deque):
             factors_info = list(factor_info_iter)
         return factors_info
 
-    def merge_factors(self):
+    def merge_factors(self, reduce=True):
         # todo unstack factor name to check whether factor exists duplicates!!
         # factors = FactorPool()
+        if reduce:
+            for factor in self.merge_df_factor(self):
+                yield factor
+            for factor in self.merge_h5_factor(self):
+                yield factor
+            for factor in self.merge_sql_factor(self):
+                yield factor
+        else:
+            for factor in self:
+                yield factor
 
-        for factor in self.merge_df_factor(self):
-            yield factor
-        for factor in self.merge_h5_factor(self):
-            yield factor
-        for factor in self.merge_sql_factor(self):
-            yield factor
-        # factors.extend(list(self.merge_sql_factor(self)))
-        # factors.extend(list(self.merge_df_factor(self)))
-        # factors.extend(list(self.merge_h5_factor(self)))
-        # return factors
+    def _fetch_iter_with_element(self, _cik_dts, _cik_ids) -> object:
 
-    def fetch_iter(self, _cik_dts=None, _cik_ids=None, reduced=True, add_limit=False, show_process=True):
+        fetched = ((f.element, f.get(self._cik_dts, self._cik_ids).set_index(['cik_dts', 'cik_ids'])) for f in self)
+        return fetched
+
+    def fetch_iter(self, _cik_dts=None, _cik_ids=None, reduced=False, add_limit=False, show_process=False):
         """
 
         :param show_process:
@@ -133,9 +151,10 @@ class FactorPool(deque):
             fetched = (f.get(self._cik_dts, self._cik_ids).set_index(['cik_dts', 'cik_ids']) for f in factors)
         return fetched
 
-    def fetch(self, _cik_dts=None, _cik_ids=None, reduced=True, add_limit=False, show_process=True):
+    def fetch(self, _cik_dts=None, _cik_ids=None, merge=True, reduced=False, add_limit=False, show_process=False):
         """
 
+        :param merge:
         :param show_process:
         :param reduced: whether use reduce form
         :param _cik_dts: set up dts
@@ -146,14 +165,15 @@ class FactorPool(deque):
 
         fetched = self.fetch_iter(_cik_dts=_cik_dts, _cik_ids=_cik_ids, reduced=reduced, add_limit=add_limit,
                                   show_process=show_process)
-
-        result = pd.concat(fetched, axis=1)
+        if merge:
+            result = pd.concat(fetched, axis=1)
         # columns = result.columns.tolist()
-
+        else:
+            result = list(fetched)
         return result
 
     @staticmethod
-    def filter_no_duplicated_fetched(fetched, old_f_ind, name, cik_cols=['cik_dts', 'cik_ids']):
+    def _filter_no_duplicated_fetched(fetched, old_f_ind, name, cik_cols=['cik_dts', 'cik_ids']):
         """
 
         :param fetched:
@@ -171,106 +191,39 @@ class FactorPool(deque):
         id_mask = ~fetched[cik_cols[1]].isin(cik_ids_list)
         return fetched[dt_mask & id_mask]
 
-    def save(self, store_path, _cik_dts=None, _cik_ids=None, reduced=True, cik_cols=['cik_dts', 'cik_ids']):
+    @staticmethod
+    def _build_key(name, f_ind, cik_cols):
+        # f_ind_df = f_ind.copy(deep=True)
+        cik_dts = sorted(f_ind[cik_cols[0]].values.tolist())  # record dts
+        # cik_ids = sorted(f_ind[cik_cols[1]].values.tolist())  # record iid
+
+        # f_ind_df['var'] = name
+        # f_ind_df['store_loc'] = key
+        key = SaveTools._create_key_name(name, cik_dts, None)
+        return key
+
+    # @property
+    # def _update_info(self):
+    #     if self._enable_update:
+    #         d = [f.element for f in self.__factors]
+    #         return d
+    #     else:
+    #         raise None
+
+    def _update_obj(self, obj_dict: dict):  # 重构连接器
+        for f in self:
+            if f._name in obj_dict.keys():
+                f.update_element_obj(obj_dict[f._name])
+
+    def optimize(self, store_path, cik_cols=['cik_dts', 'cik_ids']):
         """
-        store factor pool
-
-        will create f_ind table to store
-
-
-        :param cik_cols:
+        optimize data
         :param store_path:
-        :param _cik_dts:
-        :param _cik_ids:
-        :param reduced:
+        :param cik_cols:
         :return:
         """
-
-        fetched = self.fetch(_cik_dts=_cik_dts, _cik_ids=_cik_ids, reduced=reduced).reset_index()
-        cols = sorted(filter(lambda x: x not in cik_cols, fetched.columns.tolist()))
-        name = ','.join(cols)
-
-        def build_key(name, f_ind, cik_cols):
-            # f_ind_df = f_ind.copy(deep=True)
-            cik_dts = sorted(f_ind[cik_cols[0]].values.tolist())  # record dts
-            cik_ids = sorted(f_ind[cik_cols[1]].values.tolist())  # record iid
-
-            # f_ind_df['var'] = name
-            # f_ind_df['store_loc'] = key
-            key = SaveTools._create_key_name(name, cik_dts, cik_ids)
-            return key
-
-        with pd.HDFStore(store_path, mode="a", complevel=3, complib=None, fletcher32=False, ) as h5_conn:
-            # check f_ind
-            keys = h5_conn.keys()
-            if '/f_ind' not in keys:
-                # create new one
-                f_ind = fetched[cik_cols]
-                # cik_dts = sorted(f_ind[cik_cols[0]].values.tolist())  # record dts
-                # cik_iid = sorted(f_ind[cik_cols[1]].values.tolist())  # record iid
-                # key = SaveTools._create_key_name(name, cik_dts, cik_iid)
-                # f_ind['var'] = name
-                # f_ind['store_loc'] = key
-                key = build_key(name, f_ind, cik_cols)
-                f_ind['var'] = name
-                f_ind['store_loc'] = key
-                h5_conn['f_ind'] = f_ind
-                h5_conn[key] = fetched
-            else:
-                # update old one
-                old_f_ind = h5_conn['f_ind']
-                old_name = old_f_ind['var'].unique()[0]
-                if name != old_name:
-                    raise ValueError(f'f_ind.var got two or more diff vars！ new[{name}] vs old[{old_name}]')
-                new_fetched = self.filter_no_duplicated_fetched(fetched, old_f_ind, name, cik_cols=cik_cols)
-                if new_fetched.empty:
-                    warnings.warn(f'new_fetched is empty! nothing to update!')
-                else:
-                    f_ind = fetched[cik_cols]
-                    # cik_dts = sorted(new_fetched[cik_cols[0]].values.tolist())
-                    # cik_iid = sorted(new_fetched[cik_cols[1]].values.tolist())
-
-                    key = build_key(name, new_fetched, cik_cols)  # SaveTools._create_key_name(name, cik_dts, cik_iid)
-                    f_ind['store_loc'] = key
-                    f_ind['var'] = name
-
-                    h5_conn['f_ind'] = new_f_ind = pd.concat([old_f_ind, f_ind])
-                    h5_conn[key] = new_fetched
-
-    def load(self, store_path, cik_dts=None, cik_ids=None, cik_cols=['cik_dts', 'cik_ids']):
-
-        if not os.path.exists(store_path):
-            raise FileNotFoundError(f'h5:{store_path} not exists! please check!')
-        with pd.HDFStore(store_path, mode="a", complevel=3, complib=None, fletcher32=False, ) as h5_conn:
-            keys = h5_conn.keys()
-            if '/f_ind' not in keys:
-                raise ValueError(f'h5:{store_path} has no f_ind key! please check!')
-            f_ind = h5_conn['f_ind']
-            var = f_ind['var'].unique().tolist()
-            if len(var) > 1: raise ValueError(f'f_ind.var got two or more diff vars:{var}')
-            name = var[0]
-            var = name.split(',')
-
-            if cik_dts is None and cik_ids is None:
-                store_loc_list = f_ind['store_loc'].unique()
-                df = pd.concat([h5_conn[loc] for loc in store_loc_list])
-                f1 = FactorCreator(name, df, cik_cols[0], cik_cols[1], factor_names=var)
-                self.add_factor(f1)
-            else:
-                selected_cik_dts = f_ind[cik_cols[0]].unique() if cik_dts is None else cik_dts
-                selected_cik_iid = f_ind[cik_cols[1]].unique() if cik_ids is None else cik_ids
-
-                dts_mask = f_ind[cik_cols[0]].isin(selected_cik_dts)
-                ids_mask = f_ind[cik_cols[1]].isin(selected_cik_iid)
-
-                store_loc_list = f_ind[dts_mask & ids_mask]['store_loc'].unique()
-                df = pd.concat([h5_conn[loc] for loc in store_loc_list])
-
-                dts_mask = df[cik_cols[0]].isin(selected_cik_dts)
-                ids_mask = df[cik_cols[1]].isin(selected_cik_iid)
-
-                f1 = FactorCreator(name, df[dts_mask & ids_mask], cik_cols[0], cik_cols[1], factor_names=var)
-                self.add_factor(f1)
+        raise NotImplementedError('optimize')
+        pass
 
 
 if __name__ == '__main__':
@@ -281,17 +234,27 @@ if __name__ == '__main__':
     #
     # df = pd.DataFrame(np.random.random(size=(1000, 3)), columns=['cik_dts', 'cik_iid', 'v3'])
     # f2 = FactorUnit('test2', df, 'cik_dts', 'cik_iid', factor_names=['v3'])
-    from ClickSQL import BaseSingleFactorTableNode
+    # from ClickSQL import BaseSingleFactorTableNode
+    #
+    # src = 'clickhouse://default:Imsn0wfree@47.104.186.157:8123/system'
+    # node = BaseSingleFactorTableNode(src)
+    #
+    # # f3 = FactorUnit('test.test2', query, 'cik_dts', 'cik_iid', factor_names=['v3'])
+    #
+    # f2 = FactorPool()
+    #
+    # f2.add_factor('EDGAR_LOG.parsed_edgar_log', node, 'date', 'ip', 'size,crawler')
+    # f2.add_factor('EDGAR_LOG.parsed_edgar_log', node, 'date', 'ip', 'code')
+    # f2.add_factor('select * from EDGAR_LOG.parsed_edgar_log', node, 'date', 'ip', 'idx,cik,noagent')
+    # f2_data = f2.merge_factors().fetch(_cik_dts=['20170430'], _cik_iids=['104.155.127.aha'])
+    config = {}
+    config['name'] = name  # str
+    config['obj'] = obj  # object
+    config['cik_dt'] = cik_dt  # str
+    config['cik_id'] = cik_id  # str
 
-    src = 'clickhouse://default:Imsn0wfree@47.104.186.157:8123/system'
-    node = BaseSingleFactorTableNode(src)
+    config['factor_names'] = factor_names  # (list, tuple, str)
+    config['as_alias'] = as_alias  # (list, tuple, str)
+    config['db_table'] = db_table  # str
 
-    # f3 = FactorUnit('test.test2', query, 'cik_dts', 'cik_iid', factor_names=['v3'])
-
-    f2 = FactorPool()
-
-    f2.add_factor('EDGAR_LOG.parsed_edgar_log', node, 'date', 'ip', 'size,crawler')
-    f2.add_factor('EDGAR_LOG.parsed_edgar_log', node, 'date', 'ip', 'code')
-    f2.add_factor('select * from EDGAR_LOG.parsed_edgar_log', node, 'date', 'ip', 'idx,cik,noagent')
-    f2_data = f2.merge_factors().fetch(_cik_dts=['20170430'], _cik_iids=['104.155.127.aha'])
     pass
