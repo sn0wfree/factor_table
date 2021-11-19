@@ -5,10 +5,11 @@ from typing import Union
 import pandas as pd
 
 from factor_table.core.FactorPool import FactorPool
+from factor_table.core.FactorTools import SaveTools
 from factor_table.core.Factors import FactorCreator
 
 
-class __MetaFactorTable__(object):
+class __MetaFactorTable__(SaveTools):
     @staticmethod
     def generate_alias(factor_names: Union[list,], as_alias: Union[list, tuple, str] = None):
         """
@@ -115,11 +116,11 @@ class __FactorTable__(__MetaFactorTable__):
     def show_factors(self, *args, **kwargs):
         return self.__factors.show_factors(*args, **kwargs)
 
-    @wraps(FactorPool.show_factors)
+    @wraps(FactorCreator.__new__)
     def append(self, *args, **kwargs):
         self.__factors.append(*args, **kwargs)
 
-    @wraps(FactorPool.add_factor)
+    @wraps(FactorCreator.__new__)
     def add_factor(self, *args, **kwargs):
         return self.__factors.add_factor(*args, **kwargs)
 
@@ -131,12 +132,12 @@ class __FactorTable__(__MetaFactorTable__):
         for config in configs:
             self.__factors.add_factor(**config)
 
-    @wraps(FactorPool.save)
+    # @wraps(FactorPool.save)
     def save(self, *args, force=True, **kwargs):
         # force = self._status.get('force', False)
         return self.__factors.save(self.__factors, *args, force=force, **kwargs)
 
-    @wraps(FactorPool.load)
+    # @wraps(FactorPool.load)
     def load(self, *args, **kwargs):
         return self.__factors.load(self, *args, **kwargs)
 
@@ -167,7 +168,7 @@ class __FactorTable__(__MetaFactorTable__):
             h.extend(f.get_cik_ids())
         return sorted(set(h))
 
-    def fetch(self, _cik_dts, _cik_ids, reduced=False, add_limit=False, show_process=True, delay=False):
+    def fetch(self, cik_dts=None, cik_ids=None,  show_process=False, delay=False,inplace=False,**kwargs):
         """
 
         :param delay:
@@ -178,15 +179,15 @@ class __FactorTable__(__MetaFactorTable__):
         :param add_limit: use force limit columns
         :return:
         """
+        if cik_dts is None:
+            cik_dts = self.cik_dts
+        if cik_ids is None:
+            cik_ids = self.cik_ids
 
-        fetched = self.__factors.fetch_iter(_cik_dts=_cik_dts, _cik_ids=_cik_ids, reduced=reduced,
-                                            add_limit=add_limit, show_process=show_process)
-        if delay:
-            return fetched
-        else:
-            result = pd.concat(fetched, axis=1)
-            # columns = result.columns.tolist()
-            return result
+        fetched = self.__factors.fetch_iter(_cik_dts=cik_dts, _cik_ids=cik_ids, reduced=False,
+                                            add_limit=False, show_process=show_process)
+
+        return fetched if delay else pd.concat(fetched, axis=1)
 
 
 class FactorTable(__FactorTable__):
@@ -201,7 +202,7 @@ class FactorTable(__FactorTable__):
         cik_ids = self.cik_ids
         data = self.fetch(cik_dts, cik_ids, reduced=True, add_limit=False)
         cols = data.columns.tolist()
-        holder = {col: data[col].reset_index().pivot_table(index='cik_dt', columns='cik_id', values=col) for col in
+        holder = {col: data[col].reset_index().pivot_table(index='cik_dts', columns='cik_ids', values=col) for col in
                   cols}
 
         self.__transformed_data = holder

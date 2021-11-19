@@ -40,7 +40,7 @@ class __FactorH5__(Factor):  # only store a cross section data
             key = self._name
             df = pd.read_hdf(h5_path, key)  # [self._cik.dts]
         dt_ = transform_dt_format(df, col='cik_dts')
-        return dt_.dt.strftime('%Y-%m-%d').unique().tolist()
+        return dt_.dt.strftime('%Y%m%d').unique().tolist()
         # return df[self._cik.dts].dt.strftime('%Y-%m-%d').unique().tolist()
 
     def get_cik_ids(self, force=False, **kwargs):

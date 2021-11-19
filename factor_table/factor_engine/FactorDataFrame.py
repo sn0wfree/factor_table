@@ -22,7 +22,7 @@ class __FactorDF__(Factor):  # only store a cross section data
             dt_data = self._obj  # [self._cik.dts]
 
         dt_ = transform_dt_format(dt_data, col='cik_dts')
-        return dt_.dt.strftime('%Y-%m-%d').unique().tolist()
+        return dt_.dt.strftime('%Y%m%d').unique().tolist()
 
     def get_cik_ids(self, force=False, **kwargs):
 

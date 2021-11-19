@@ -1,0 +1,3 @@
+
+
+DB_CONFIG : "oracle+cx_oracle://qry_wind_yf:gjsql2k9@192.168.82.1/winddb2"

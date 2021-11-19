@@ -2,6 +2,7 @@
 
 import warnings
 from collections import Callable
+from numpy import e
 
 import pandas as pd
 
@@ -113,17 +114,46 @@ class Factor(object):
         raise NotImplementedError('get!')
 
     def _df_get_(self, df: pd.DataFrame, cik_dt_list: list, cik_id_list: list):
-        df['cik_dts'] = transform_dt_format(df, col='cik_dts')
-        dt_mask = df[self._cik.dts].isin(cik_dt_list) if cik_dt_list is not None else True
-        id_mask = df[self._cik.ids].isin(cik_id_list) if cik_id_list is not None else True
+        # print(df)
+        if 'cik_dts' in df.columns:
+            dt_col='cik_dts'
+        else:
+            dt_col=self._cik.dts
+
+        if 'cik_ids' in df.columns:
+            id_col='cik_ids'
+        else:
+            id_col=self._cik.ids
+        df[dt_col] = transform_dt_format(df, col=dt_col)
+        dt_mask = df[dt_col].isin(cik_dt_list) if cik_dt_list is not None else True
+        id_mask = df[id_col].isin(cik_id_list) if cik_id_list is not None else True
         mask = dt_mask & id_mask
-        cols = [self._cik.dts, self._cik.ids] + self._factor_name_list
+
+        # map(lambda x: x.isupper ,df.columns.tolist())
+
+        data_cols = df.columns.tolist()
+        
+        cols = [dt_col, id_col] # + self._factor_name_list
+        for f in self._factor_name_list:
+            status =( f in data_cols , f.lower() in data_cols , f.upper() in data_cols)
+            if status ==(True, False, False):
+                cols.append(f)
+            elif status == (False, True, False):
+                cols.append(f.lower())
+            elif status == (False, False, True):
+                cols.append(f.upper())
+            else:
+                raise ValueError(f'{f} or {f.lower()} or {f.upper()} not found!')
+
+
+            
+
         if isinstance(mask, bool):
             data = df[cols].rename(
-                columns={self._cik.dts: 'cik_dts', self._cik.ids: 'cik_ids', **dict(self.__rename_col__())})
+                columns={dt_col: 'cik_dts',id_col: 'cik_ids', **dict(self.__rename_col__())})
         else:
             data = df[mask][cols].rename(
-                columns={self._cik.dts: 'cik_dts', self._cik.ids: 'cik_ids', **dict(self.__rename_col__())})
+                columns={dt_col: 'cik_dts', id_col: 'cik_ids', **dict(self.__rename_col__())})
 
         self._cache_func(data)
         # self._cache = data
@@ -179,14 +209,20 @@ class __FactorSQL__(Factor):  # only store a cross section data
         f_names_list = [f if (a is None) or (f == a) else f"{f} as {a}" for f, a in
                         zip(_factor_name_list, _alias)]
         cols_str = ','.join(f_names_list)
-        if len(cik_dt_list) <= 10:
-            cik_dt_cond = f"{_cik.dts} in ( '" + "' , '".join(cik_dt_list) + "')"
+        if len(cik_dt_list) <= 10 :
+            if len(cik_dt_list) > 1:
+                cik_dt_cond = f"{_cik.dts} in ( '" + "' , '".join(cik_dt_list) + "')"
+            else:
+                cik_dt_cond = f"{_cik.dts} = '" +   "' , '".join(cik_dt_list) +  "'"
         else:
             cik_dt_cond = f"{_cik.dts} > '{min(cik_dt_list)}'  "
 
         if cik_id_list is not None:
             if len(cik_id_list) <= 10:
-                cik_id_cond = f"{_cik.ids} in ('" + "' , '".join(cik_id_list) + "') "
+                if len(cik_id_list) > 1:
+                    cik_id_cond = f"{_cik.ids} in ( '" + "' , '".join(cik_id_list) + "')"
+                else:
+                    cik_id_cond = f"{_cik.ids}= '" + "' , '".join(cik_id_list) +  "'"
                 conditions = f"{cik_dt_cond} and {cik_id_cond}"
             else:
                 conditions = f"{cik_dt_cond} "
@@ -227,9 +263,14 @@ class __FactorSQL__(Factor):  # only store a cross section data
         return sql
 
     def get_cik_dts(self, force=False, **kwargs):
-        if self._cache and not force:
-            dt_data = self._cache.reset_index()[self._cik.dts]
+        
+        if self._cache is not None and not force:
+            
+            print(f'get cik_dts from cache!')
+            
+            dt_data = self._cache.reset_index()#['cik_dts']
         else:
+            print(f'get cik_dts from db!')
             # dt_data = self._obj[self._cik.dts]
             # TODO 性能点
             func = getattr(self, 'get_sql_create')
@@ -237,15 +278,18 @@ class __FactorSQL__(Factor):  # only store a cross section data
                                                  self._db_table, self._obj_type)
 
             dt_data = self._obj(sql_cik_dts)
-        dt_ = transform_dt_format(dt_data, col='cik_dts')
+        
 
-        return dt_.dt.strftime('%Y-%m-%d').unique().tolist()
+        return transform_dt_format(dt_data, col='cik_dts').dt.strftime('%Y%m%d').unique().tolist()
 
     def get_cik_ids(self, force=False, **kwargs):
-        if self._cache and not force:
+        
+        if self._cache is not None and not force:
+            print(f'get cik_ids from cache!')
             # dt_data = self._cache[self._cik.ids]
             return self._cache.reset_index()['cik_ids'].unique().tolist()
         else:
+            print('get cik_ids from db!')
             # dt_data = self._obj[self._cik.dts]
             # TODO 性能点
             func = getattr(self, 'get_sql_create')
@@ -254,13 +298,17 @@ class __FactorSQL__(Factor):  # only store a cross section data
             return self._obj(sql_cik_ids)['cik_ids'].unique().tolist()
 
     def get(self, cik_dt_list, cik_id_list, force=False, **kwargs):
-        if self._cache and not force:
-            return self._cache
-        func = getattr(self, 'get_sql_create')
-        sql, sql_cik_dts, sql_cik_ids = func(cik_dt_list, cik_id_list, self._factor_name_list, self._alias, self._cik,
-                                             self._db_table, self._obj_type)
+        if self._cache is not None and not force:
+            data = self._cache
+        else:
+            func = getattr(self, 'get_sql_create')
+            sql, sql_cik_dts, sql_cik_ids = func(cik_dt_list, cik_id_list, self._factor_name_list, self._alias, self._cik,
+                                                self._db_table, self._obj_type)
+            # print(sql)
 
-        data = self._obj(sql)
+            data = self._obj(sql)
+        # print(data)
+            
         return self._df_get_(data, cik_dt_list, cik_id_list)
 
     def update(self, cik_dt_list=None, callback=None, force=False, **kwargs):
