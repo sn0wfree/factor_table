@@ -1,6 +1,7 @@
 # coding=utf-8
 import os
 from collections import Callable
+from typing import Union
 
 import pandas as pd
 
@@ -8,6 +9,7 @@ from factor_table.factor_engine import Factor, __FactorSQL__
 from factor_table.factor_engine.FactorDataFrame import __FactorDF__
 from factor_table.factor_engine.FactorH5 import __FactorH5__
 from factor_table.factor_engine.FactorSQLClickHouse import __FactorSQLClickHouse__
+from factor_table.factor_engine.FactorSQLMySQL import __FactorSQLMySQL__
 from factor_table.helper import FactorElement
 
 
@@ -23,8 +25,8 @@ class FactorCreator(type):
     def __instancecheck__(cls, instance):
         return isinstance(instance, Factor)
 
-    def __new__(cls, name, obj, cik_dt: str, cik_id: str, factor_names: (list, tuple, str),
-                as_alias: (list, tuple, str) = None, db_table: str = None, **kwargs):
+    def __new__(cls, name, obj, cik_dt: str, cik_id: str, factor_names: Union[list, tuple, str],
+                as_alias: Union[list, tuple, str] = None, db_table: str = None, **kwargs):
         """
 
         :param name:  db_table_sql, df name or  h5_key
@@ -52,6 +54,9 @@ class FactorCreator(type):
             elif db_type == 'SQL':
                 _obj = __FactorSQL__(name, obj, cik_dt, cik_id, factor_names,
                                      as_alias=as_alias, db_table=db_table, **kwargs)
+            elif db_type == 'MySQL':
+                _obj = __FactorSQLMySQL__(name, obj, cik_dt, cik_id, factor_names,
+                                     as_alias=as_alias, db_table=db_table, **kwargs)
             elif db_type == 'ClickHouse':
                 _obj = __FactorSQLClickHouse__(name, obj, cik_dt, cik_id, factor_names,
                                                as_alias=as_alias, db_table=db_table, **kwargs)
@@ -60,9 +65,8 @@ class FactorCreator(type):
         else:
             raise ValueError('Unknown info! only accept DF,F5,SQL or ClickHouse')
         _obj.__class__.__name__ = 'Factor'
-
         return _obj
-        # return _obj
+        
 
 
 if __name__ == '__main__':

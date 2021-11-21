@@ -1,8 +1,9 @@
 # coding=utf-8
 
+from typing import Union
 import warnings
 from collections import Callable
-from numpy import e
+# from numpy import np
 
 import pandas as pd
 
@@ -15,8 +16,8 @@ class Factor(object):
     __slots__ = ['_obj', '_cik', '_factor_name_list', '_alias', '_obj_type', '_db_table', '_name', '_kwargs', 'element',
                  '_cache']
 
-    def __init__(self, name, obj, cik_dt: str, cik_id: str, factor_names: (list, tuple, str),
-                 as_alias: (list, tuple, str) = None, db_table: str = None, **kwargs):
+    def __init__(self, name, obj, cik_dt: str, cik_id: str, factor_names: Union[list, tuple, str],
+                 as_alias: Union[list, tuple, str] = None, db_table: str = None, **kwargs):
 
         self._obj = obj
         self._cik = CoreIndexKeys(cik_dt, cik_id)
@@ -58,7 +59,7 @@ class Factor(object):
                           )
 
     @staticmethod
-    def generate_factor_names(factor_names: (list, tuple, str)):
+    def generate_factor_names(factor_names: Union[list, tuple, str]):
         if isinstance(factor_names, str):
             factor_names = factor_names.split(',') if ',' in factor_names else [factor_names]
         elif isinstance(factor_names, (list, tuple)):
@@ -68,7 +69,7 @@ class Factor(object):
         return factor_names
 
     @staticmethod
-    def generate_alias(factor_names: list, as_alias: (list, tuple, str) = None):
+    def generate_alias(factor_names: list, as_alias: Union[list, tuple, str] = None):
         if as_alias is None:
             alias = [None for _ in factor_names]
         elif isinstance(as_alias, str):
@@ -115,25 +116,18 @@ class Factor(object):
 
     def _df_get_(self, df: pd.DataFrame, cik_dt_list: list, cik_id_list: list):
         # print(df)
-        if 'cik_dts' in df.columns:
-            dt_col='cik_dts'
-        else:
-            dt_col=self._cik.dts
 
-        if 'cik_ids' in df.columns:
-            id_col='cik_ids'
-        else:
-            id_col=self._cik.ids
+        data_cols = df.columns.tolist()
+        dt_col='cik_dts' if 'cik_dts' in data_cols else self._cik.dts    
+        id_col='cik_ids' if 'cik_ids' in data_cols else self._cik.ids
+        
         df[dt_col] = transform_dt_format(df, col=dt_col)
         dt_mask = df[dt_col].isin(cik_dt_list) if cik_dt_list is not None else True
         id_mask = df[id_col].isin(cik_id_list) if cik_id_list is not None else True
         mask = dt_mask & id_mask
-
-        # map(lambda x: x.isupper ,df.columns.tolist())
-
-        data_cols = df.columns.tolist()
-        
+               
         cols = [dt_col, id_col] # + self._factor_name_list
+        # check factor_name_list
         for f in self._factor_name_list:
             status =( f in data_cols , f.lower() in data_cols , f.upper() in data_cols)
             if status ==(True, False, False):
@@ -167,11 +161,11 @@ class __FactorSQL__(Factor):  # only store a cross section data
     __slots__ = ['_obj', '_cik', '_factor_name_list', '_alias', '_obj_type', '_db_table', '_name', '_kwargs', '_src',
                  'db_type', 'element', '_cache']
 
-    def __init__(self, db_table_sql: str, query: object, cik_dt: str, cik_id: str, factor_names: str, *args,
-                 as_alias: (list, tuple, str) = None, **kwargs):
+    def __init__(self, db_table_sql: str, query: object, cik_dt: str, cik_id: str, factor_names: Union[list, tuple, str], *args,
+                 as_alias: Union[list, tuple, str] = None, **kwargs):
         super(__FactorSQL__, self).__init__(db_table_sql, query, cik_dt, cik_id, factor_names, *args,
                                             as_alias=as_alias, **kwargs)
-        db_type: str = kwargs.get('db_type', 'SQL')  # 默认是ClickHouse
+        db_type: str = kwargs.get('db_type', 'SQL') 
         self.db_type = db_type
         self._db_table = db_table_sql
         self._obj_type = f'SQL_{db_type}' if db_table_sql.lower().startswith('select ') else f'db_table_{db_type}'

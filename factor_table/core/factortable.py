@@ -11,7 +11,7 @@ from factor_table.core.Factors import FactorCreator
 
 class __MetaFactorTable__(SaveTools):
     @staticmethod
-    def generate_alias(factor_names: Union[list,], as_alias: Union[list, tuple, str] = None):
+    def generate_alias(factor_names: Union[list,tuple], as_alias: Union[list, tuple, str] = None):
         """
         convert alias to list of alias, only accept list, tuple, str
 
@@ -132,14 +132,14 @@ class __FactorTable__(__MetaFactorTable__):
         for config in configs:
             self.__factors.add_factor(**config)
 
-    # @wraps(FactorPool.save)
-    def save(self, *args, force=True, **kwargs):
-        # force = self._status.get('force', False)
-        return self.__factors.save(self.__factors, *args, force=force, **kwargs)
+    # # @wraps(FactorPool.save)
+    # def save(self, *args, force=True, **kwargs):
+    #     # force = self._status.get('force', False)
+    #     return self.__factors.save(self.__factors, *args, force=force, **kwargs)
 
-    # @wraps(FactorPool.load)
-    def load(self, *args, **kwargs):
-        return self.__factors.load(self, *args, **kwargs)
+    # # @wraps(FactorPool.load)
+    # def load(self, *args, **kwargs):
+    #     return self.__factors.load(self, *args, **kwargs)
 
     @property
     def _obj_type(self):
@@ -168,7 +168,7 @@ class __FactorTable__(__MetaFactorTable__):
             h.extend(f.get_cik_ids())
         return sorted(set(h))
 
-    def fetch(self, cik_dts=None, cik_ids=None,  show_process=False, delay=False,inplace=False,**kwargs):
+    def fetch(self, cik_dts=None, cik_ids=None,  show_process=False, delay=False,force=False,**kwargs):
         """
 
         :param delay:
@@ -185,9 +185,11 @@ class __FactorTable__(__MetaFactorTable__):
             cik_ids = self.cik_ids
 
         fetched = self.__factors.fetch_iter(_cik_dts=cik_dts, _cik_ids=cik_ids, reduced=False,
-                                            add_limit=False, show_process=show_process)
+                                            add_limit=False, show_process=show_process,force=force)
+        
+        print(fetched)
 
-        return fetched if delay else pd.concat(fetched, axis=1)
+        return fetched if delay else pd.concat(fetched, axis=1).drop_duplicates()
 
 
 class FactorTable(__FactorTable__):
@@ -200,15 +202,19 @@ class FactorTable(__FactorTable__):
         """
         cik_dts = self.cik_dts
         cik_ids = self.cik_ids
-        data = self.fetch(cik_dts, cik_ids, reduced=True, add_limit=False)
-        cols = data.columns.tolist()
-        holder = {col: data[col].reset_index().pivot_table(index='cik_dts', columns='cik_ids', values=col) for col in
-                  cols}
+        data = self.fetch(cik_dts, cik_ids, reduced=False,delay=True, add_limit=False)
+        holder={}
+        for d in data:
+            for col in d.columns.tolist():
+                holder[col] = d[col].reset_index().pivot_table(index='cik_dts', columns='cik_ids', values=col)
+        
+        # holder = {col: data[col].reset_index().pivot_table(index='cik_dts', columns='cik_ids', values=col) for col in
+        #           cols}
 
         self.__transformed_data = holder
         self._transformed = True
 
-    def clean(self):
+    def clean_cache(self):
         """
         clean redundant factors
         """

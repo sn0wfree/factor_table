@@ -111,17 +111,17 @@ class FactorPool(deque):
             for factor in self:
                 yield factor
 
-    def _fetch_iter_with_element(self, ) -> object:
+    def _fetch_iter_with_element(self,force=False ) -> object:
         """
 
         :param _cik_dts:
         :param _cik_ids:
         :return:
         """
-        fetched = ((f.element, f.get(self._cik_dts, self._cik_ids).set_index(['cik_dts', 'cik_ids'])) for f in self)
+        fetched = ((f.element, f.get(self._cik_dts, self._cik_ids,force=force).set_index(['cik_dts', 'cik_ids'])) for f in self)
         return fetched
 
-    def fetch_iter(self, _cik_dts=None, _cik_ids=None, reduced=False, add_limit=False, show_process=False):
+    def fetch_iter(self, _cik_dts=None, _cik_ids=None, reduced=False, add_limit=False, show_process=False,force=False) -> object:
         """
 
         :param show_process:
@@ -144,16 +144,16 @@ class FactorPool(deque):
                 if self._cik_ids is None:
                     raise KeyError('cik_ids(either default approach or fetch) both are not setup!')
 
-        factors = self.merge_factors() if reduced else self
+        factors = self.merge_factors(reduced=reduced) if reduced else self
 
         if show_process:
-            fetched = (f.get(self._cik_dts, self._cik_ids).set_index(['cik_dts', 'cik_ids']) for f in
+            fetched = (f.get(self._cik_dts, self._cik_ids,force=force).set_index(['cik_dts', 'cik_ids']) for f in
                        process_bar(factors))
         else:
-            fetched = (f.get(self._cik_dts, self._cik_ids).set_index(['cik_dts', 'cik_ids']) for f in factors)
+            fetched = (f.get(self._cik_dts, self._cik_ids,force=force).set_index(['cik_dts', 'cik_ids']) for f in factors)
         return fetched
 
-    def fetch(self, _cik_dts=None, _cik_ids=None, merge=True, reduced=False, add_limit=False, show_process=False):
+    def fetch(self, _cik_dts=None, _cik_ids=None, merge=True, reduced=False, add_limit=False, show_process=False,force=False):
         """
 
         :param merge:
@@ -166,7 +166,7 @@ class FactorPool(deque):
         """
 
         fetched = self.fetch_iter(_cik_dts=_cik_dts, _cik_ids=_cik_ids, reduced=reduced, add_limit=add_limit,
-                                  show_process=show_process)
+                                  show_process=show_process,force=force)
 
         return pd.concat(fetched, axis=1) if merge else list(fetched)
 
