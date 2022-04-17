@@ -1,13 +1,12 @@
 # coding=utf-8
-import logging, os
-from WealthScore.utils.logger import LoggerHelper
-from WealthScore.conf import Config
-import WealthScore
+import logging
+import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(WealthScore.__path__[0]))
-LOG_DIR = os.path.join(BASE_DIR, 'logs')
+from factor_table.utils.logger import LoggerHelper
 
-file_path = os.path.join(LOG_DIR, Config.settings.get('LogFile', 'proj.log'))
+LOG_DIR = os.path.dirname(os.path.abspath('./'))
+
+file_path = os.path.join(LOG_DIR, 'DEBUG.log')
 Logger = LoggerHelper(file_path=file_path, log_level=logging.INFO)
 if __name__ == '__main__':
     # print(file_path)

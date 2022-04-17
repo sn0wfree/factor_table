@@ -1,12 +1,37 @@
 # coding=utf-8
 import hashlib
-import os,time
+import os
+import time
+import warnings
+from dataclasses import dataclass
 
 import pandas as pd
+
 
 def _build_key(data, _cik_dts: list, cik_cols=['cik_dts', 'cik_ids']):
     cols = sorted(filter(lambda x: x not in cik_cols, data.columns.tolist()))
     return '|'.join(cols) + '@' + f"{min(_cik_dts)}_{max(_cik_dts)}"
+
+
+@dataclass
+class CoreIndexKeys(object):
+    __slots__ = ['dts', 'ids']
+    dts: str
+    ids: str
+
+
+@dataclass
+class FactorInfo(object):
+    __slots__ = ['f_id_or_sql', 'cik_dt_col', 'cik_id_col', 'factor_names', 'alias', 'obj_type', 'db_type', 'src']
+    f_id_or_sql: str
+    cik_dt_col: str
+    cik_id_col: str
+    factor_names: str
+    alias: str
+    obj_type: str
+    db_type:str
+    src: str
+
 
 class KeyInfoDict(dict):
     def batch_key_append(self, keys):
@@ -26,26 +51,30 @@ class KeyInfoDict(dict):
     def extend_dts(self):
         holder = []
         # info = pd.DataFrame(self.values(), columns=['key', 'cols_str', 'start', 'end'])
-        for key, cols, start, end in self.values():
-             
-            d = pd.DataFrame(pd.date_range(str(start), str(end)), columns=['dt'])
-            d['key'] = key
-            d['cols_str'] = cols
-            holder.append(d)
+        for key, detail in self.items():
+            for k, cols, start, end in detail:
+                d = pd.DataFrame(pd.date_range(str(start), str(end)), columns=['dt'])
+                d['key'] = k
+                d['cols_str'] = cols
+                holder.append(d)
         return pd.concat(holder).drop_duplicates()
 
-    def search_key(self, cols_str: str=None, start=None, end=None):
+    def search_key(self, cols_str: str = None, start=None, end=None):
         info = self.extend_dts
-    
-        mask1 = info['cols_str'] == cols_str if cols_str is not None else True               
-        mask_dt1 = info['dt'] >=  info['dt'].min()  if start is None else info['dt'] >= pd.to_datetime(str(start))                               
-        mask_dt2 = info['dt'] <= info['dt'].max() if end is None else info['dt'] <= pd.to_datetime(str(end))               
+        if cols_str is not None:
+            mask1 = info['cols_str'] == cols_str
+        else:
+            mask1 = True
+        mask_dt1 = info['dt'] >= info['dt'].min() if start is None else info['dt'] >= pd.to_datetime(str(start))
+        mask_dt2 = info['dt'] <= info['dt'].max() if end is None else info['dt'] <= pd.to_datetime(str(end))
         selected = info[mask1 & mask_dt1 & mask_dt2]
         return selected.groupby('cols_str')['key'].unique().to_dict()
 
 
 class CacheViews(dict):
     pass
+
+
 class SaveTools(object):
     @staticmethod
     def _hash_func(s, encoding='utf-8'):
@@ -90,8 +119,6 @@ class SaveTools(object):
         else:
             raise ValueError(f'stored var:{old_name} diff from {name}')
 
-    
-
     @staticmethod
     def raw_save(factor_table: object, store_path: str, cik_cols=['cik_dts', 'cik_ids'], auto_save=True, cik_dts=None,
                  cik_ids=None, if_exists='replace'):
@@ -122,8 +149,6 @@ class SaveTools(object):
         if not hasattr(factor_table, 'fetch'):
             raise AttributeError('input factor_table object has not fetch Attribute!')
 
-        
-
         with pd.HDFStore(store_path, mode="a", complevel=6, complib=None, fletcher32=False, ) as h5_conn:
             # check f_ind
 
@@ -133,18 +158,17 @@ class SaveTools(object):
 
             for data in fetched:
                 name = _build_key(data, _cik_dts, cik_cols=cik_cols)
-                if if_exists == 'replace':
+                if name not in keys:
                     h5_conn[name] = data
-                elif if_exists == 'ignore':
-                    if name not in keys:
+                else:
+                    if if_exists == 'replace':
                         h5_conn[name] = data
-                elif if_exists == 'error':
-                    if name in keys:
+                    elif if_exists == 'ignore':
+                        warnings.warn(f'will ignore {name}!')
+                    elif if_exists == 'error':
                         raise KeyError(f'{name} at {store_path} exists!')
                     else:
-                        h5_conn[name] = data
-                else:
-                    raise ValueError('if_exists must be replace, ignore or error')
+                        raise ValueError('if_exists must be replace, ignore or error')
 
                 # if name not in keys:
 
@@ -161,78 +185,76 @@ class SaveTools(object):
             key_info.batch_key_append(keys)
             if cik_dts is None:
                 start = None
-                end =None
+                end = None
             else:
                 start = min(cik_dts)
                 end = max(cik_dts)
-            for cols, key_list in key_info.search_key(None, start=start, end=end):
-                data = pd.concat([ h5_conn[key]  for key in key_list])
-                yield cols,data
-    @classmethod
-    def raw_merge(cls,store_path, cik_cols=['cik_dts', 'cik_ids'],del_method='remove',**kwargs):
+            for cols, key_list in key_info.search_key(None, start=start, end=end).items():
+                data = pd.concat([h5_conn[key] for key in key_list])
+                yield cols, data
 
-        
-        with pd.HDFStore(store_path+'.merge', mode="a", complevel=6, complib=None, fletcher32=False, ) as h5_conn2:
-            for cols, data in cls.raw_load(cls,store_path,cik_dts=None, cik_cols=cik_cols):
+    @classmethod
+    def raw_merge(cls, store_path, cik_cols=['cik_dts', 'cik_ids'], del_method='remove', **kwargs):
+
+        with pd.HDFStore(store_path + '.merge', mode="a", complevel=6, complib=None, fletcher32=False, ) as h5_conn2:
+            for cols, data in cls.raw_load(cls, store_path, cik_dts=None, cik_cols=cik_cols):
                 _cik_dts = data[cik_cols[0]].unique().tolist()
                 name = _build_key(data, _cik_dts, cik_cols=cik_cols)
                 h5_conn2[name] = data
-        
+
         # repalce file old file by merged file
-        if os.path.exists(store_path) and os.path.exists(store_path+'.merge'):
-            if del_method =='remove':
+        if os.path.exists(store_path) and os.path.exists(store_path + '.merge'):
+            if del_method == 'remove':
                 os.remove(store_path)
             else:
-                os.rename(store_path,store_path+f'.old.{int(time.time())}')
-            os.rename(store_path+'.merge', store_path)
+                os.rename(store_path, store_path + f'.old.{int(time.time())}')
+            os.rename(store_path + '.merge', store_path)
         else:
-            raise ValueError(f'{store_path} or {store_path+".merge"} is not exists!')
+            raise ValueError(f'{store_path} or {store_path + ".merge"} is not exists!')
 
         # os.remove(store_path)
 
-
         # return pd.concat(datas.values(), axis=1)
-        
-                
-                # if '/elements' not in keys:
-            #     raise ValueError(f'h5:{store_path} has no elements key! please check!')
-            #
-            # if '/f_ind' not in keys:
-            #     raise ValueError(f'h5:{store_path} has no f_ind key! please check!')
-            # f_ind = h5_conn['f_ind']
-            # ele = h5_conn['elements']
-            # elements = pickle.loads(ele[0])
-            # # var = f_ind['var'].unique().tolist()
-            # # if len(var) > 1: raise ValueError(f'f_ind.var got two or more diff vars:{var}')
-            # for element in elements:
-            #
-            #     # name = element.name
-            #     if cik_dts is None:
-            #         mask = f_ind['var'].isin([element.name])
-            #         store_loc_list = f_ind[mask]['store_loc'].unique().tolist()
-            #         df = pd.concat([h5_conn[loc] for loc in store_loc_list])
-            #         df = df[df[cik_cols[1]].isin(cik_ids)] if cik_ids is not None else df
-            #         f1 = FactorCreator.load_from_element(element)
-            #         f1._cache_func(df)
-            #
-            #         target_ft.add_factor(f1)
-            #     else:
-            #         selected_cik_dts = f_ind[cik_cols[0]].unique() if cik_dts is None else cik_dts
-            #         # selected_cik_ids = f_ind[cik_cols[1]].unique() if cik_ids is None else cik_ids
-            #         # filter f_ind index
-            #         dts_mask = f_ind[cik_cols[0]].isin(selected_cik_dts)
-            #         # ids_mask = f_ind[cik_cols[1]].isin(selected_cik_ids)
-            #         store_loc_list = f_ind[dts_mask]['store_loc'].unique().tolist()
-            #         df = pd.concat([h5_conn[loc] for loc in store_loc_list])
-            #         dts_mask = df[cik_cols[0]].isin(selected_cik_dts)
-            #         ids_mask = df[cik_cols[1]].isin(cik_ids) if cik_ids is not None else 1
-            #         f1 = FactorCreator.load_from_element(element)
-            #         f1._cache_func(df[dts_mask & ids_mask])
-            #         # f1 = FactorCreator(name, df[dts_mask & ids_mask], cik_cols[0], cik_cols[1], factor_names=var)
-            #         target_ft.add_factor(f1)
+
+        # if '/elements' not in keys:
+        #     raise ValueError(f'h5:{store_path} has no elements key! please check!')
+        #
+        # if '/f_ind' not in keys:
+        #     raise ValueError(f'h5:{store_path} has no f_ind key! please check!')
+        # f_ind = h5_conn['f_ind']
+        # ele = h5_conn['elements']
+        # elements = pickle.loads(ele[0])
+        # # var = f_ind['var'].unique().tolist()
+        # # if len(var) > 1: raise ValueError(f'f_ind.var got two or more diff vars:{var}')
+        # for element in elements:
+        #
+        #     # name = element.name
+        #     if cik_dts is None:
+        #         mask = f_ind['var'].isin([element.name])
+        #         store_loc_list = f_ind[mask]['store_loc'].unique().tolist()
+        #         df = pd.concat([h5_conn[loc] for loc in store_loc_list])
+        #         df = df[df[cik_cols[1]].isin(cik_ids)] if cik_ids is not None else df
+        #         f1 = FactorCreator.load_from_element(element)
+        #         f1._cache_func(df)
+        #
+        #         target_ft.add_factor(f1)
+        #     else:
+        #         selected_cik_dts = f_ind[cik_cols[0]].unique() if cik_dts is None else cik_dts
+        #         # selected_cik_ids = f_ind[cik_cols[1]].unique() if cik_ids is None else cik_ids
+        #         # filter f_ind index
+        #         dts_mask = f_ind[cik_cols[0]].isin(selected_cik_dts)
+        #         # ids_mask = f_ind[cik_cols[1]].isin(selected_cik_ids)
+        #         store_loc_list = f_ind[dts_mask]['store_loc'].unique().tolist()
+        #         df = pd.concat([h5_conn[loc] for loc in store_loc_list])
+        #         dts_mask = df[cik_cols[0]].isin(selected_cik_dts)
+        #         ids_mask = df[cik_cols[1]].isin(cik_ids) if cik_ids is not None else 1
+        #         f1 = FactorCreator.load_from_element(element)
+        #         f1._cache_func(df[dts_mask & ids_mask])
+        #         # f1 = FactorCreator(name, df[dts_mask & ids_mask], cik_cols[0], cik_cols[1], factor_names=var)
+        #         target_ft.add_factor(f1)
 
 
-class FactorTools(SaveTools): pass
+# class FactorTools(SaveTools): pass
 
 
 # @classmethod

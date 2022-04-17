@@ -128,3 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 test/20211119/execute_181f7f82555905b40ddb8d4e12bd4b6405e21482_2021-11-19 16
+
+# test folder
+test/

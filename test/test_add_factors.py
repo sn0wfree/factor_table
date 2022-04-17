@@ -1,6 +1,6 @@
 import unittest
 
-from factor_table.core.factortable import __FactorTable__ as FactorTable
+from factor_table.core.factortable import MetaFactorTable as FactorTable
 from test.conn import conn
 
 

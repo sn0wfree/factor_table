@@ -1,0 +1,3 @@
+DATETIME_FORMAT : '%Y-%m-%d'
+DEFAULT_CIK_DT : 'cik_dt'
+DEFAULT_CIK_ID : 'cik_id'

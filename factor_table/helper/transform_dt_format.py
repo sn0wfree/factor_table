@@ -3,7 +3,7 @@
 import pandas as pd
 
 
-def transform_dt_format(dts1: pd.DataFrame, col='cik_dts'):
+def transform_dt_format(dts1: pd.DataFrame, col='cik_dt'):
     name = dts1.dtypes[col].name
     if name == 'object':
         return pd.to_datetime(dts1[col])
