@@ -178,38 +178,38 @@ class FactorTable(MetaFactorTable):
 
 
 if __name__ == '__main__':
-    f_ = FactorTable()
-    import numpy as np
-
-    np.random.seed(1)
-    from factor_table.core.FactorCreator import FactorCreator
-
-    np.random.seed(1)
-    dts = pd.date_range('2011-01-01', '2022-12-31', )[:1000]
-    ids = np.random.randint(1, 10000, size=(1000, 1)).ravel().tolist()
-    h1 = []
-    h2 = []
-    for i in ids:
-        df = pd.DataFrame(np.random.random(size=(1000, 2)), columns=['v1', 'v2'])
-        df2 = pd.DataFrame(np.random.random(size=(1000, 2)), columns=['v3', 'v4'])
-        df['cik_dt'] = dts
-        df['cik_id'] = i
-        df2['cik_dt'] = dts
-        df2['cik_id'] = i
-        h1.append(df)
-        h2.append(df2)
-    df_1 = pd.concat(h1)
-    df_2 = pd.concat(h2)
-    del df, df2
-
-    # f1 = FactorCreator('test', df_1, 'cik_dt', 'cik_id', factor_names=['v1', 'v2'])
-    f2 = FactorCreator('test2', df_2, 'cik_dt', 'cik_id', factor_names=['v3', 'v4'])
-    f_.add_factor('test', df_1, 'cik_dt', 'cik_id', factor_names=['v1', 'v2'])
-    print(1, f_.show_factors())
-    f_.add_factor(f2)
-    # f_.add_factor('test3', df3, 'cik_dt', 'cik_id', factor_names=['v5', 'v6'])
-
-    print(2, f_.show_factors())
-    f_.transform_matrix()
-    print(1)
+    # f_ = FactorTable()
+    # import numpy as np
+    #
+    # np.random.seed(1)
+    # from factor_table.core.FactorCreator import FactorCreator
+    #
+    # np.random.seed(1)
+    # dts = pd.date_range('2011-01-01', '2022-12-31', )[:1000]
+    # ids = np.random.randint(1, 10000, size=(1000, 1)).ravel().tolist()
+    # h1 = []
+    # h2 = []
+    # for i in ids:
+    #     df = pd.DataFrame(np.random.random(size=(1000, 2)), columns=['v1', 'v2'])
+    #     df2 = pd.DataFrame(np.random.random(size=(1000, 2)), columns=['v3', 'v4'])
+    #     df['cik_dt'] = dts
+    #     df['cik_id'] = i
+    #     df2['cik_dt'] = dts
+    #     df2['cik_id'] = i
+    #     h1.append(df)
+    #     h2.append(df2)
+    # df_1 = pd.concat(h1)
+    # df_2 = pd.concat(h2)
+    # del df, df2
+    #
+    # # f1 = FactorCreator('test', df_1, 'cik_dt', 'cik_id', factor_names=['v1', 'v2'])
+    # f2 = FactorCreator('test2', df_2, 'cik_dt', 'cik_id', factor_names=['v3', 'v4'])
+    # f_.add_factor('test', df_1, 'cik_dt', 'cik_id', factor_names=['v1', 'v2'])
+    # print(1, f_.show_factors())
+    # f_.add_factor(f2)
+    # # f_.add_factor('test3', df3, 'cik_dt', 'cik_id', factor_names=['v5', 'v6'])
+    #
+    # print(2, f_.show_factors())
+    # f_.transform_matrix()
+    # print(1)
     pass
