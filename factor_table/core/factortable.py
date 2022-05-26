@@ -94,7 +94,7 @@ class MetaFactorTable(SaveTools):
         :return:
         """
 
-        cik_dts = self._factors.available_cik_dts if cik_dts is None else cik_dts
+        cik_dts = pd.to_datetime(self._factors.available_cik_dts) if cik_dts is None else pd.to_datetime(cik_dts)
 
         cik_ids = self._factors.available_cik_ids if cik_ids is None else cik_ids
 
@@ -132,10 +132,15 @@ class FactorTable(MetaFactorTable):
         
         transform to matrix form
         """
+        Logger.info('begin to transformation!')
+        Logger.info('processing cik_dt_data')
         cik_dt_data = pd.to_datetime(self._factors.available_cik_dts) if cik_dt_data is None else pd.to_datetime(
             cik_dt_data)
-
+        Logger.info('processed cik_dt_data')
+        Logger.info('processing cik_id_data')
         cik_id_data = self._factors.available_cik_ids if cik_id_data is None else cik_id_data
+        Logger.info('processed cik_id_data')
+        Logger.info('begin to fetch!')
         data_iter = self.fetch(cik_dt_data, cik_id_data, reduced=False, delay=True, add_limit=False)
 
         for d in data_iter:

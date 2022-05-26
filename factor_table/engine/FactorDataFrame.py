@@ -21,8 +21,9 @@ class FactorDF(Factor):  # only store a cross section data
 
     def get_cik_dts(self, skip_cache=True, **kwargs):
         # dt_data = self._obj[self._cik.dts]
-        dt_ = transform_dt_format(self._obj, col=self._cik.dts)
-        return dt_.dt.strftime(DATETIME_FORMAT).unique().tolist()
+        dt_ = transform_dt_format(self._obj, col=self._cik.dts).drop_duplicates()
+        c = dt_.dt.strftime(DATETIME_FORMAT).tolist()
+        return c
 
     def get_cik_ids(self, skip_cache=True, **kwargs):
         dt_data = self._obj[self._cik.ids]
