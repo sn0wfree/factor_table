@@ -1,6 +1,6 @@
 # coding=utf-8
 import os
-from collections import Callable
+from collections.abc import Callable
 
 import pandas as pd
 
