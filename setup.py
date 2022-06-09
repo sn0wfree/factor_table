@@ -15,6 +15,7 @@ setup(
     author_email="snowfreedom0815@gmail.com",
 
     packages=find_packages(),
+    package_data={'': ['*.yml', '*.yaml']},
     include_package_data=True,
 
 )
